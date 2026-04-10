@@ -1,0 +1,60 @@
+{
+  "name": "@atomicbot/computer-use",
+  "version": "0.1.0",
+  "description": "Framework-agnostic desktop computer-use tool for AI agents: screenshot, mouse, keyboard, OCR, overlay",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./actions": {
+      "types": "./dist/actions.d.ts",
+      "default": "./dist/actions.js"
+    },
+    "./ocr": {
+      "types": "./dist/ocr/index.d.ts",
+      "default": "./dist/ocr/index.js"
+    },
+    "./overlay": {
+      "types": "./dist/overlay/index.d.ts",
+      "default": "./dist/overlay/index.js"
+    },
+    "./session-lock": {
+      "types": "./dist/session-lock.d.ts",
+      "default": "./dist/session-lock.js"
+    },
+    "./coord-mapping": {
+      "types": "./dist/coord-mapping.d.ts",
+      "default": "./dist/coord-mapping.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "files": [
+    "dist",
+    "native"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.14",
+    "usecomputer": "0.1.10"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "license": "MIT"
+}
