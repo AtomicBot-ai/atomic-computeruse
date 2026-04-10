@@ -1,3 +1,4 @@
+import { readFileSync, unlinkSync } from "node:fs";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -76,12 +77,11 @@ function registerExitCleanup(): void {
   cleanupRegistered = true;
 
   const onExit = (): void => {
-    const fs = require("node:fs") as typeof import("node:fs");
     try {
-      const raw = fs.readFileSync(getLockPath(), "utf8");
+      const raw = readFileSync(getLockPath(), "utf8");
       const parsed = JSON.parse(raw) as LockPayload;
       if (parsed.sessionKey === currentSessionKey) {
-        fs.unlinkSync(getLockPath());
+        unlinkSync(getLockPath());
       }
     } catch {
       // best-effort

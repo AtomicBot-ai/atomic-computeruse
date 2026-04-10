@@ -1,4 +1,12 @@
 import { createBridge } from "usecomputer";
+import { execFileSync } from "node:child_process";
+import { chmodSync } from "node:fs";
+import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
+import { tmpdir } from "node:os";
+
+const require = createRequire(import.meta.url);
 
 type ScreenshotInput = {
   display?: number | null;
@@ -23,6 +31,23 @@ type ScrollInput = {
 
 const bridge = createBridge();
 
+// Resolve path to the prebuilt usecomputer CLI binary inside the usecomputer package.
+// The native .node addon crashes in some host process contexts (e.g. MCP inside Cline),
+// so screenshots are routed through the standalone CLI binary instead.
+// npm tarballs strip the +x bit, so we ensure the binary is executable before use.
+function getUscomputerBinaryPath(): string {
+  const pkgJsonPath = require.resolve("usecomputer/package.json") as string;
+  const pkgRoot = path.dirname(pkgJsonPath);
+  const platform = os.platform();
+  const arch = os.arch();
+  const binaryName = platform === "win32" ? "usecomputer.exe" : "usecomputer";
+  const binaryPath = path.join(pkgRoot, "dist", `${platform}-${arch}`, binaryName);
+  if (platform !== "win32") {
+    try { chmodSync(binaryPath, 0o755); } catch { /* best-effort */ }
+  }
+  return binaryPath;
+}
+
 export async function screenshot(input: ScreenshotInput): Promise<{
   path: string;
   captureX: number;
@@ -35,13 +60,61 @@ export async function screenshot(input: ScreenshotInput): Promise<{
   hint: string;
   desktopIndex: number;
 }> {
-  return bridge.screenshot({
-    path: input.path ?? undefined,
-    display: input.display ?? undefined,
-    window: input.window ?? undefined,
-    region: input.region ?? undefined,
-    annotate: (input.annotate ?? undefined) as boolean | undefined,
-  });
+  const binaryPath = getUscomputerBinaryPath();
+  const outPath =
+    input.path ?? path.join(tmpdir(), `usecomputer-screenshot-${Date.now()}.png`);
+
+  const args: string[] = ["screenshot", outPath];
+  if (input.display != null) args.push("--display", String(input.display));
+  if (input.window != null) args.push("--window", String(input.window));
+  if (input.region != null) {
+    const r = input.region;
+    args.push("--region", `${r.x},${r.y},${r.width},${r.height}`);
+  }
+  if (input.annotate) args.push("--annotate");
+  args.push("--json");
+
+  const output = execFileSync(binaryPath, args, { encoding: "utf8" });
+  const data = JSON.parse(output.trim()) as {
+    path: string;
+    desktopIndex: number;
+    captureX: number;
+    captureY: number;
+    captureWidth: number;
+    captureHeight: number;
+    imageWidth: number;
+    imageHeight: number;
+  };
+
+  const coordMap = [
+    data.captureX,
+    data.captureY,
+    data.captureWidth,
+    data.captureHeight,
+    data.imageWidth,
+    data.imageHeight,
+  ].join(",");
+
+  const hint = [
+    "ALWAYS pass this exact coord map to click, hover, drag, and mouse move when using coordinates from this screenshot:",
+    `--coord-map "${coordMap}"`,
+    "",
+    "Example:",
+    `usecomputer click -x 400 -y 220 --coord-map "${coordMap}"`,
+  ].join("\n");
+
+  return {
+    path: data.path,
+    desktopIndex: data.desktopIndex,
+    captureX: data.captureX,
+    captureY: data.captureY,
+    captureWidth: data.captureWidth,
+    captureHeight: data.captureHeight,
+    imageWidth: data.imageWidth,
+    imageHeight: data.imageHeight,
+    coordMap,
+    hint,
+  };
 }
 
 export async function click(input: ClickInput) {
