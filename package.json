@@ -1,6 +1,6 @@
 {
   "name": "@atomicbotai/computer-use",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Framework-agnostic desktop computer-use tool for AI agents: screenshot, mouse, keyboard, OCR, overlay",
   "type": "module",
   "main": "./dist/index.js",
