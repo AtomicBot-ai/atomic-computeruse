@@ -39,7 +39,7 @@ npm install @atomicbotai/computer-use
 import { createComputerTool } from "@atomicbotai/computer-use";
 
 const tool = createComputerTool({
-  overlay: { enabled: true, color: "AEFF00", label: "My Agent" },
+  overlay: { enabled: true, color: "00BFFF", label: "My Agent" },
   debugArtifacts: true,
 });
 
@@ -230,7 +230,7 @@ const myAdapter: OcrAdapter = {
 type ComputerToolOptions = {
   overlay?: {
     enabled?: boolean;  // Show "agent active" overlay (default: true)
-    color?: string;     // Hex color without # (default: "AEFF00")
+    color?: string;     // Hex color without # (default: "00BFFF")
     label?: string;     // Overlay label (default: "Atomic bot")
   };
   debugArtifacts?: boolean;    // Save debug output per action

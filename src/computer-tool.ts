@@ -158,7 +158,7 @@ export function createComputerTool(options?: ComputerToolOptions): ComputerTool 
   const overlayEnabled = options?.overlay?.enabled ?? true;
   configureOverlay({
     enabled: overlayEnabled,
-    color: options?.overlay?.color ?? "AEFF00",
+    color: options?.overlay?.color ?? "00BFFF",
     label: options?.overlay?.label ?? "Atomic bot",
   });
 
