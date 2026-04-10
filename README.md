@@ -1,11 +1,11 @@
-# @atomicbot/computer-use
+# @atomicbotai/computer-use
 
 **Framework-agnostic desktop automation for AI agents.**
 
 Give your AI agent eyes and hands — screenshot the screen, click, type, scroll, drag, read text via OCR, and more. Works with any tool-calling LLM framework, MCP server, or custom pipeline.
 
-[![npm](https://img.shields.io/npm/v/@atomicbot/computer-use)](https://www.npmjs.com/package/@atomicbot/computer-use)
-[![license](https://img.shields.io/npm/l/@atomicbot/computer-use)](./LICENSE)
+[![npm](https://img.shields.io/npm/v/@atomicbotai/computer-use)](https://www.npmjs.com/package/@atomicbotai/computer-use)
+[![license](https://img.shields.io/npm/l/@atomicbotai/computer-use)](./LICENSE)
 ![node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
 
 ---
@@ -32,11 +32,11 @@ Give your AI agent eyes and hands — screenshot the screen, click, type, scroll
 ## Quick Start
 
 ```bash
-npm install @atomicbot/computer-use
+npm install @atomicbotai/computer-use
 ```
 
 ```typescript
-import { createComputerTool } from "@atomicbot/computer-use";
+import { createComputerTool } from "@atomicbotai/computer-use";
 
 const tool = createComputerTool({
   overlay: { enabled: true, color: "AEFF00", label: "My Agent" },
@@ -153,7 +153,7 @@ import {
   createMacOsVisionOcrAdapter,
   createWindowsMediaOcrAdapter,
   createNullOcrAdapter,
-} from "@atomicbot/computer-use/ocr";
+} from "@atomicbotai/computer-use/ocr";
 import type {
   OcrResult,
   OcrLine,
@@ -162,7 +162,7 @@ import type {
   OcrAdapter,
   OcrLayout,
   OcrSummary,
-} from "@atomicbot/computer-use/ocr";
+} from "@atomicbotai/computer-use/ocr";
 
 // Recognize text from any image
 const result = await recognizeText({
@@ -198,7 +198,7 @@ const summary = summarizeOcr(result);
 You can create your own OCR adapter (e.g. Tesseract for Linux) by implementing the `OcrAdapter` interface:
 
 ```typescript
-import type { OcrAdapter, RecognizeTextParams, OcrResult } from "@atomicbot/computer-use/ocr";
+import type { OcrAdapter, RecognizeTextParams, OcrResult } from "@atomicbotai/computer-use/ocr";
 
 const myAdapter: OcrAdapter = {
   async recognizeText(params: RecognizeTextParams): Promise<OcrResult | null> {
@@ -246,7 +246,7 @@ The library exposes its internal subsystems as separate entry points for advance
 ### Individual Actions
 
 ```typescript
-import { executeScreenshot, executeClick, executeType } from "@atomicbot/computer-use/actions";
+import { executeScreenshot, executeClick, executeType } from "@atomicbotai/computer-use/actions";
 
 // Build a custom tool with only the actions you need
 const result = await executeScreenshot({
@@ -264,8 +264,8 @@ import {
   buildOcrLayout,
   summarizeOcr,
   createOcrAdapter,
-} from "@atomicbot/computer-use/ocr";
-import type { OcrResult, OcrAdapter } from "@atomicbot/computer-use/ocr";
+} from "@atomicbotai/computer-use/ocr";
+import type { OcrResult, OcrAdapter } from "@atomicbotai/computer-use/ocr";
 
 const ocrResult = await recognizeText({
   imagePath: "./screenshot.png",
@@ -284,7 +284,7 @@ import {
   configureOverlay,
   showOverlay,
   forceHideOverlay,
-} from "@atomicbot/computer-use/overlay";
+} from "@atomicbotai/computer-use/overlay";
 
 configureOverlay({ enabled: true, color: "FF5500", label: "My Bot" });
 await showOverlay();
@@ -300,7 +300,7 @@ import {
   tryAcquire,
   releaseLock,
   isLockHeldLocally,
-} from "@atomicbot/computer-use/session-lock";
+} from "@atomicbotai/computer-use/session-lock";
 
 const result = await tryAcquire("my-session-id");
 if (result.kind === "blocked") {
@@ -314,7 +314,7 @@ if (result.kind === "blocked") {
 ### Coordinate Mapping
 
 ```typescript
-import { mapToScreen, storeCoordMap } from "@atomicbot/computer-use/coord-mapping";
+import { mapToScreen, storeCoordMap } from "@atomicbotai/computer-use/coord-mapping";
 
 // Store the coord map string from a screenshot result
 storeCoordMap("0,0,1920,1080,1024,768");

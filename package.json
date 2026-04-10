@@ -1,6 +1,6 @@
 {
-  "name": "@atomicbot/computer-use",
-  "version": "0.1.0",
+  "name": "@atomicbotai/computer-use",
+  "version": "0.1.4",
   "description": "Framework-agnostic desktop computer-use tool for AI agents: screenshot, mouse, keyboard, OCR, overlay",
   "type": "module",
   "main": "./dist/index.js",
@@ -44,7 +44,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "release": "./release.sh",
-    "release:dry": "./release.sh --dry-run"
+    "publish:npm": "./publish.sh",
+    "publish:dry": "./publish.sh --dry-run"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.14",
