@@ -42,7 +42,9 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "release": "./release.sh",
+    "release:dry": "./release.sh --dry-run"
   },
   "dependencies": {
     "@sinclair/typebox": "^0.34.14",
