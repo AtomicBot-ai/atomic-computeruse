@@ -93,6 +93,137 @@ const tool = createComputerTool();
 | `open_app` | `app_name` | Launch application by name |
 | `switch_app` | `app_name` | Switch to application by name |
 
+## OCR: Built-in Text Recognition
+
+One of the most powerful features of the library — **zero-dependency OCR** that uses native platform APIs. No Tesseract, no cloud services, no API keys, no extra binaries. It just works.
+
+### Why This Matters for AI Agents
+
+Screenshots alone are not enough. When an LLM looks at a downscaled screenshot, small text becomes unreadable — button labels, menu items, chat messages, form fields all blur together. The agent guesses coordinates and misses.
+
+OCR solves this by extracting text with **pixel-precise coordinates** directly from the screenshot. The agent gets:
+
+- **Anchor points** — `"Send" at (1450, 890)` — exact clickable coordinates for every text element
+- **Bounding boxes** — `left=1400, top=875, width=100, height=30` — the full region of each element
+- **Confidence scores** — so the agent knows which detections to trust
+- **Layout structure** — elements ordered top-to-bottom, left-to-right, matching how a human reads the screen
+
+This turns a blurry screenshot into a structured map of the UI.
+
+### How It Works
+
+When you call `screenshot_full`, the library:
+
+1. Takes a **full-resolution** screenshot (no downscaling)
+2. Runs OCR via the **native platform engine** (no external deps)
+3. Selects the most useful text anchors (deduped, sorted by reading order)
+4. Builds a **layout map** with coordinates in screenshot-image space
+5. Generates a **prompt hint** for the LLM with anchor coordinates
+
+The result returned to the model looks like:
+
+```
+Full-resolution screenshot captured (2560x1600) with grid overlay.
+OCR anchors: "Inbox" at (120, 45); "Compose" at (85, 130); "Search mail" at (450, 45).
+OCR layout: [e1 "Inbox" center=(120, 45) box=(80, 30, 80x30)] [e2 "Compose" center=(85, 130) box=(40, 115, 90x30)]
+```
+
+The agent can now click `"Compose"` at `(85, 130)` instead of guessing where the button might be.
+
+### Platform Engines
+
+| Platform | Engine | How it runs |
+|----------|--------|-------------|
+| **macOS** | Apple Vision framework | Native Swift script via `xcrun swift` — no Xcode required |
+| **Windows** | Windows.Media.Ocr | PowerShell script using built-in UWP OCR API |
+| **Linux** | — | Not available yet (null adapter, graceful no-op) |
+
+Both engines run **locally and offline**. No data leaves the machine. No API keys needed.
+
+### Standalone OCR Usage
+
+The OCR subsystem is available as a separate import for use outside the computer tool:
+
+```typescript
+import {
+  recognizeText,
+  buildOcrLayout,
+  summarizeOcr,
+  createOcrAdapter,
+  createMacOsVisionOcrAdapter,
+  createWindowsMediaOcrAdapter,
+  createNullOcrAdapter,
+} from "@atomicbot/computer-use/ocr";
+import type {
+  OcrResult,
+  OcrLine,
+  OcrBoundingBox,
+  OcrAnchorPoint,
+  OcrAdapter,
+  OcrLayout,
+  OcrSummary,
+} from "@atomicbot/computer-use/ocr";
+
+// Recognize text from any image
+const result = await recognizeText({
+  imagePath: "./screenshot.png",
+  imageWidth: 2560,
+  imageHeight: 1600,
+});
+
+// result.lines → array of detected text lines:
+// [
+//   {
+//     text: "Compose",
+//     confidence: 0.98,
+//     bbox: { left: 40, top: 115, width: 90, height: 30 },
+//     center: { x: 85, y: 130 }
+//   },
+//   ...
+// ]
+
+// Build a structured layout for LLM consumption
+const layout = buildOcrLayout(result);
+// layout.elements → top elements with IDs, sorted by reading order
+// layout.promptHint → ready-to-use prompt string
+
+// Or get a compact summary with anchor points
+const summary = summarizeOcr(result);
+// summary.text → 'OCR anchors: "Inbox" at (120, 45); "Compose" at (85, 130)'
+// summary.anchors → [{ text: "Inbox", x: 120, y: 45, confidence: 0.99 }, ...]
+```
+
+### Custom OCR Adapters
+
+You can create your own OCR adapter (e.g. Tesseract for Linux) by implementing the `OcrAdapter` interface:
+
+```typescript
+import type { OcrAdapter, RecognizeTextParams, OcrResult } from "@atomicbot/computer-use/ocr";
+
+const myAdapter: OcrAdapter = {
+  async recognizeText(params: RecognizeTextParams): Promise<OcrResult | null> {
+    // params.imagePath — path to the screenshot image
+    // params.imageWidth / imageHeight — image dimensions
+    // params.signal — AbortSignal for cancellation
+    //
+    // Return OcrResult with lines array, or null on failure
+    return {
+      engine: "my-custom-engine",
+      imageWidth: params.imageWidth,
+      imageHeight: params.imageHeight,
+      lines: [
+        {
+          text: "Detected text",
+          confidence: 0.95,
+          bbox: { left: 100, top: 200, width: 150, height: 25 },
+          center: { x: 175, y: 212 },
+        },
+      ],
+    };
+  },
+};
+```
+
 ## Configuration
 
 ```typescript
