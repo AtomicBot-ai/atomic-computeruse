@@ -73,3 +73,11 @@ export async function forceHideOverlay(): Promise<void> {
     // best-effort cleanup
   }
 }
+
+export async function setOverlayDescription(text: string): Promise<void> {
+  try {
+    await getAdapter().setDescription(text);
+  } catch {
+    // non-critical visual indicator
+  }
+}

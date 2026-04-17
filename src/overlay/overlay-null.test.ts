@@ -15,4 +15,11 @@ describe("createNullOverlayAdapter", () => {
     await adapter.hide();
     await adapter.hide();
   });
+
+  it("setDescription is a no-op for any input", async () => {
+    const adapter = createNullOverlayAdapter();
+    await expect(adapter.setDescription("")).resolves.toBeUndefined();
+    await expect(adapter.setDescription("taking screenshot...")).resolves.toBeUndefined();
+    await expect(adapter.setDescription("multi\nline\ninput")).resolves.toBeUndefined();
+  });
 });

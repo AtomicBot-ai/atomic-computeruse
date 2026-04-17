@@ -20,7 +20,12 @@ import {
 } from "./actions.js";
 import { registerCleanupHandlers } from "./cleanup.js";
 import { configureDebugArtifacts, saveDebugToolResultArtifact, setActiveDebugArtifactRunId } from "./debug-artifacts.js";
-import { configureOverlay, showOverlay, scheduleHideOverlay } from "./overlay/index.js";
+import {
+  configureOverlay,
+  showOverlay,
+  scheduleHideOverlay,
+  setOverlayDescription,
+} from "./overlay/index.js";
 import { configureLockDir, tryAcquire, releaseLock } from "./session-lock.js";
 import {
   clearRecentTextEntry,
@@ -125,6 +130,12 @@ const ComputerToolSchema = Type.Object(
     app_name: Type.Optional(
       Type.String({ description: "Application name to open (e.g. 'Safari', 'Terminal')." }),
     ),
+    description: Type.Optional(
+      Type.String({
+        description:
+          "Brief, human-readable explanation of what this action is doing right now, to display to the user (e.g. 'taking screenshot...', 'clicking Send button...', 'typing search query...'). 3-8 words, end with an ellipsis to indicate the action is in progress.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -141,6 +152,7 @@ const TOOL_DESCRIPTION = [
   "'type' inserts literal text as-is (like typing on a keyboard). 'press' executes keyboard shortcuts and special keys using modifier names: 'cmd+v', 'cmd+shift+s', 'enter', 'tab', 'backspace'. Never use Unicode symbols (⌘⌥⌃⇧) — always use named modifiers (cmd, alt, ctrl, shift) with 'press'.",
   "For scrolling use 'scroll'.",
   "Additional: 'double_click'/'triple_click' for multi-clicks, 'mouse_move' to reposition cursor, 'drag' for drag-and-drop (x/y to to_x/to_y), 'wait' to pause, 'hold_key' to hold a key, 'read_clipboard'/'write_clipboard' for clipboard access, 'open_app' or 'switch_app' to launch apps, and 'submit_input' to send the current input with Enter.",
+  "Always fill the 'description' field with a short, human-readable phrase (3-8 words, ending with an ellipsis) describing what this specific action is doing. It is shown to the user in the on-screen overlay while the action runs.",
 ].join(" ");
 
 export function createComputerTool(options?: ComputerToolOptions): ComputerTool {
@@ -191,6 +203,10 @@ export function createComputerTool(options?: ComputerToolOptions): ComputerTool 
       };
     }
 
+    const rawDescription = args.description;
+    const descriptionText =
+      typeof rawDescription === "string" ? rawDescription.trim() : "";
+    await setOverlayDescription(descriptionText);
     await showOverlay();
 
     const action = args.action as string;

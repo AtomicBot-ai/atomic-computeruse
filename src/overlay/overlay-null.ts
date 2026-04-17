@@ -4,5 +4,6 @@ export function createNullOverlayAdapter(): OverlayAdapter {
   return {
     async show() {},
     async hide() {},
+    async setDescription() {},
   };
 }

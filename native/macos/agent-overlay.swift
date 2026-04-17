@@ -1,5 +1,9 @@
-// Agent control overlay: glowing screen border + cursor highlight ring.
-// Launched as a subprocess, stays alive until killed (SIGTERM/SIGINT).
+// Agent control overlay: glowing screen border + cursor highlight ring
+// + two-pill cursor label (name + optional live description).
+// Launched as a subprocess, stays alive until killed (SIGTERM/SIGINT)
+// or stdin is closed. Accepts line-based commands on stdin:
+//   desc <utf8-text>\n   — update description pill (empty hides it)
+//   quit\n               — graceful fade-out
 // Usage: xcrun swift agent-overlay.swift [--color RRGGBB] [--label TEXT]
 
 import AppKit
@@ -14,6 +18,11 @@ let FADE_OUT_DURATION: TimeInterval = 0.35
 let PULSE_MIN_ALPHA: CGFloat = 0.55
 let PULSE_MAX_ALPHA: CGFloat = 1.0
 let PULSE_PERIOD: TimeInterval = 2.0
+
+// Layout for the pill stack (name + description)
+let PILL_STACK_SPACING: CGFloat = 4.0
+let PILL_CURSOR_OFFSET_X: CGFloat = 6.0
+let PILL_CURSOR_OFFSET_Y: CGFloat = 8.0
 
 var overlayR: CGFloat = 0.682
 var overlayG: CGFloat = 1.0
@@ -70,9 +79,11 @@ final class GlowBorderView: NSView {
     }
 }
 
-// ── Cursor label view ────────────────────────────────────────
+// ── Pill view (reused for name and description) ──────────────
+// Self-sizing rounded-pill with centered text. Exposes preferredSize()
+// that recomputes from the current text so the stack can resize.
 
-final class CursorLabelView: NSView {
+final class PillView: NSView {
     override var wantsLayer: Bool { get { true } set {} }
     override var isFlipped: Bool { false }
 
@@ -80,11 +91,38 @@ final class CursorLabelView: NSView {
     static let paddingH: CGFloat = 8.0
     static let paddingV: CGFloat = 3.0
     static let cornerRadius: CGFloat = 4.0
+    static let outerInset: CGFloat = 1.0
 
-    private lazy var textAttrs: [NSAttributedString.Key: Any] = [
-        .font: NSFont.systemFont(ofSize: CursorLabelView.fontSize, weight: .medium),
-        .foregroundColor: NSColor.black,
-    ]
+    var text: String {
+        didSet {
+            invalidateIntrinsicContentSize()
+            needsDisplay = true
+        }
+    }
+
+    init(text: String) {
+        self.text = text
+        super.init(frame: .zero)
+        wantsLayer = true
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("not supported") }
+
+    private var textAttrs: [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: PillView.fontSize, weight: .medium),
+            .foregroundColor: NSColor.black,
+        ]
+    }
+
+    override var intrinsicContentSize: NSSize {
+        let size = (text as NSString).size(withAttributes: textAttrs)
+        return NSSize(
+            width: ceil(size.width) + PillView.paddingH * 2 + PillView.outerInset * 2,
+            height: ceil(size.height) + PillView.paddingV * 2 + PillView.outerInset * 2
+        )
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.clear.setFill()
@@ -92,31 +130,20 @@ final class CursorLabelView: NSView {
 
         let bgColor = NSColor(red: overlayR, green: overlayG, blue: overlayB, alpha: 1.0)
         let pill = NSBezierPath(
-            roundedRect: bounds.insetBy(dx: 1, dy: 1),
-            xRadius: CursorLabelView.cornerRadius,
-            yRadius: CursorLabelView.cornerRadius
+            roundedRect: bounds.insetBy(dx: PillView.outerInset, dy: PillView.outerInset),
+            xRadius: PillView.cornerRadius,
+            yRadius: PillView.cornerRadius
         )
         bgColor.setFill()
         pill.fill()
 
-        let str = NSAttributedString(string: overlayLabelText, attributes: textAttrs)
+        let str = NSAttributedString(string: text, attributes: textAttrs)
         let size = str.size()
         let origin = NSPoint(
             x: (bounds.width - size.width) / 2.0,
             y: (bounds.height - size.height) / 2.0
         )
         str.draw(at: origin)
-    }
-
-    static func preferredSize() -> NSSize {
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize, weight: .medium),
-        ]
-        let size = (overlayLabelText as NSString).size(withAttributes: attrs)
-        return NSSize(
-            width: ceil(size.width) + paddingH * 2 + 2,
-            height: ceil(size.height) + paddingV * 2 + 2
-        )
     }
 }
 
@@ -198,9 +225,41 @@ cursorWindow.contentView = GlowCursorRingView(
 cursorWindow.contentView?.wantsLayer = true
 cursorWindow.alphaValue = 0
 
-let labelSize = CursorLabelView.preferredSize()
+// ── Cursor label window (name + optional description, stacked) ───────
+
+let namePill = PillView(text: overlayLabelText)
+let descPill = PillView(text: "")
+descPill.isHidden = true
+
+let stack = NSStackView(views: [namePill, descPill])
+stack.orientation = .vertical
+stack.alignment = .leading
+stack.spacing = PILL_STACK_SPACING
+stack.translatesAutoresizingMaskIntoConstraints = false
+stack.wantsLayer = true
+
+func stackFittingSize() -> NSSize {
+    // Sum of visible pill intrinsic sizes + spacing. Using fittingSize on the
+    // stack can return stale values right after toggling isHidden, so compute
+    // it manually from the children.
+    var width: CGFloat = 0
+    var height: CGFloat = 0
+    var visibleCount = 0
+    for case let pill as PillView in stack.arrangedSubviews where !pill.isHidden {
+        let s = pill.intrinsicContentSize
+        width = max(width, s.width)
+        height += s.height
+        visibleCount += 1
+    }
+    if visibleCount > 1 {
+        height += PILL_STACK_SPACING * CGFloat(visibleCount - 1)
+    }
+    return NSSize(width: max(1, width), height: max(1, height))
+}
+
+let initialSize = stackFittingSize()
 let labelWindow = NSWindow(
-    contentRect: NSRect(x: 0, y: 0, width: labelSize.width, height: labelSize.height),
+    contentRect: NSRect(x: 0, y: 0, width: initialSize.width, height: initialSize.height),
     styleMask: .borderless,
     backing: .buffered,
     defer: false
@@ -211,11 +270,22 @@ labelWindow.isOpaque = false
 labelWindow.hasShadow = false
 labelWindow.ignoresMouseEvents = true
 labelWindow.collectionBehavior = [.canJoinAllSpaces, .stationary]
-labelWindow.contentView = CursorLabelView(
-    frame: NSRect(x: 0, y: 0, width: labelSize.width, height: labelSize.height)
-)
-labelWindow.contentView?.wantsLayer = true
+
+// Use the stack itself as the window's content view. Its translatesAutoresizingMaskIntoConstraints
+// is flipped back on here so the window can freely resize it via setFrame. Pills inside the stack
+// keep their own intrinsic sizes; the window is sized to exactly match stackFittingSize().
+stack.translatesAutoresizingMaskIntoConstraints = true
+stack.autoresizingMask = [.width, .height]
+stack.frame = NSRect(origin: .zero, size: initialSize)
+labelWindow.contentView = stack
 labelWindow.alphaValue = 0
+
+func resizeLabelWindow() {
+    let s = stackFittingSize()
+    var frame = labelWindow.frame
+    frame.size = s
+    labelWindow.setFrame(frame, display: true)
+}
 
 // ── Fade in ──────────────────────────────────────────────────
 
@@ -255,9 +325,10 @@ Timer.scheduledTimer(withTimeInterval: CURSOR_POLL_INTERVAL, repeats: true) { _ 
         ))
         cursorWindow.orderFrontRegardless()
 
+        let winHeight = labelWindow.frame.size.height
         labelWindow.setFrameOrigin(NSPoint(
-            x: pos.x + 6.0,
-            y: pos.y - labelSize.height - 8.0
+            x: pos.x + PILL_CURSOR_OFFSET_X,
+            y: pos.y - winHeight - PILL_CURSOR_OFFSET_Y
         ))
         labelWindow.orderFrontRegardless()
     }
@@ -266,6 +337,7 @@ Timer.scheduledTimer(withTimeInterval: CURSOR_POLL_INTERVAL, repeats: true) { _ 
 // ── Graceful fade-out on termination ─────────────────────────
 
 func gracefulFadeOut() {
+    if pulseTerminating { return }
     pulseTerminating = true
     NSAnimationContext.runAnimationGroup({ ctx in
         ctx.duration = FADE_OUT_DURATION
@@ -276,6 +348,56 @@ func gracefulFadeOut() {
     }, completionHandler: {
         exit(0)
     })
+}
+
+// ── Stdin protocol reader ─────────────────────────────────────
+// Line-based. `desc <text>\n` sets description pill text (empty hides it).
+// `quit\n` triggers graceful fade-out. Pipe close also triggers fade-out.
+
+func applyDescription(_ text: String) {
+    descPill.text = text
+    descPill.isHidden = text.isEmpty
+    resizeLabelWindow()
+}
+
+func handleStdinLine(_ raw: String) {
+    let line = raw
+    if line == "quit" {
+        DispatchQueue.main.async { gracefulFadeOut() }
+        return
+    }
+    if line.hasPrefix("desc ") {
+        let text = String(line.dropFirst("desc ".count))
+        DispatchQueue.main.async { applyDescription(text) }
+        return
+    }
+    if line == "desc" {
+        DispatchQueue.main.async { applyDescription("") }
+        return
+    }
+    // Unknown lines: ignored on purpose to keep protocol forward-compatible.
+}
+
+let stdinHandle = FileHandle.standardInput
+let stdinQueue = DispatchQueue(label: "agent-overlay.stdin", qos: .utility)
+stdinQueue.async {
+    var buffer = Data()
+    while true {
+        let chunk = stdinHandle.availableData
+        if chunk.isEmpty {
+            DispatchQueue.main.async { gracefulFadeOut() }
+            return
+        }
+        buffer.append(chunk)
+        while let nlIdx = buffer.firstIndex(of: 0x0A) {
+            let lineData = buffer.subdata(in: 0..<nlIdx)
+            buffer.removeSubrange(0...nlIdx)
+            if let line = String(data: lineData, encoding: .utf8) {
+                let trimmed = line.hasSuffix("\r") ? String(line.dropLast()) : line
+                handleStdinLine(trimmed)
+            }
+        }
+    }
 }
 
 let sigTermSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)

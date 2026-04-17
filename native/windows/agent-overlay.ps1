@@ -212,10 +212,10 @@ $cursorWindow.Add_SourceInitialized({
     }
 })
 
-# ── Cursor label window (compact pill; macOS CursorLabelView parity) ───────────
-# Physical px targets → DIPs via GetDpiForWindow (same as cursor ring). The old
-# LayoutTransform only when dpiX>1.05 left the pill unscaled at 100% while WPF
-# could still render it oversized vs the intended ~11pt macOS pill.
+# ── Cursor label window (name + optional description pills in a vertical stack) ──
+# Physical px targets → DIPs via GetDpiForWindow (same as cursor ring). Both pills
+# live inside a single window hosting a vertical StackPanel so they can never
+# drift apart during cursor tracking; the window auto-sizes to content.
 
 $labelText = $Label
 $targetLabelFontPx = 11
@@ -224,6 +224,8 @@ $targetLabelPadVPx = 3
 $targetLabelCornerPx = 4
 # macOS draws the filled pill inside bounds.insetBy(dx: 1, dy: 1)
 $targetLabelOuterInsetPx = 1
+# Spacing between name pill and description pill (physical px, matches macOS)
+$targetPillSpacingPx = 4
 
 $labelWindow = [System.Windows.Window]::new()
 $labelWindow.WindowStyle = 'None'
@@ -239,19 +241,43 @@ $labelShell = [System.Windows.Controls.Border]::new()
 $labelShell.Background = [System.Windows.Media.Brushes]::Transparent
 $labelShell.SnapsToDevicePixels = $true
 
-$labelPill = [System.Windows.Controls.Border]::new()
-$labelPill.Background = [System.Windows.Media.SolidColorBrush]::new($mediaColor)
-$labelPill.SnapsToDevicePixels = $true
+$labelStack = [System.Windows.Controls.StackPanel]::new()
+$labelStack.Orientation = 'Vertical'
+$labelStack.HorizontalAlignment = 'Left'
+$labelStack.SnapsToDevicePixels = $true
 
-$labelBlock = [System.Windows.Controls.TextBlock]::new()
-$labelBlock.Text = $labelText
-$labelBlock.FontSize = 11
-$labelBlock.FontWeight = [System.Windows.FontWeights]::Medium
-$labelBlock.Foreground = [System.Windows.Media.Brushes]::Black
-$labelBlock.SnapsToDevicePixels = $true
+function New-AgentOverlayPill {
+    param([string]$Text, [bool]$Visible)
+    $pill = [System.Windows.Controls.Border]::new()
+    $pill.Background = [System.Windows.Media.SolidColorBrush]::new($mediaColor)
+    $pill.SnapsToDevicePixels = $true
+    $pill.HorizontalAlignment = 'Left'
+    $pill.Visibility = if ($Visible) { 'Visible' } else { 'Collapsed' }
 
-$labelPill.Child = $labelBlock
-$labelShell.Child = $labelPill
+    $block = [System.Windows.Controls.TextBlock]::new()
+    $block.Text = $Text
+    $block.FontSize = 11
+    $block.FontWeight = [System.Windows.FontWeights]::Medium
+    $block.Foreground = [System.Windows.Media.Brushes]::Black
+    $block.SnapsToDevicePixels = $true
+    $block.TextWrapping = 'NoWrap'
+
+    $pill.Child = $block
+    return @{ Pill = $pill; Block = $block }
+}
+
+$namePair = New-AgentOverlayPill -Text $labelText -Visible $true
+$namePill = $namePair.Pill
+$nameBlock = $namePair.Block
+
+$descPair = New-AgentOverlayPill -Text '' -Visible $false
+$descPill = $descPair.Pill
+$descBlock = $descPair.Block
+
+$labelStack.Children.Add($namePill) | Out-Null
+$labelStack.Children.Add($descPill) | Out-Null
+
+$labelShell.Child = $labelStack
 $labelWindow.Content = $labelShell
 
 $labelWindow.Add_SourceInitialized({
@@ -262,15 +288,19 @@ $labelWindow.Add_SourceInitialized({
     $inset = $targetLabelOuterInsetPx * $dpp
     $labelShell.Padding = [System.Windows.Thickness]::new($inset, $inset, $inset, $inset)
 
-    $r = $targetLabelCornerPx * $dpp
-    $labelPill.CornerRadius = [System.Windows.CornerRadius]::new($r, $r, $r, $r)
-    $labelPill.Padding = [System.Windows.Thickness]::new(
-        $targetLabelPadHPx * $dpp,
-        $targetLabelPadVPx * $dpp,
-        $targetLabelPadHPx * $dpp,
-        $targetLabelPadVPx * $dpp
-    )
-    $labelBlock.FontSize = $targetLabelFontPx * $dpp
+    $cornerDip = $targetLabelCornerPx * $dpp
+    $padH = $targetLabelPadHPx * $dpp
+    $padV = $targetLabelPadVPx * $dpp
+    $fontDip = $targetLabelFontPx * $dpp
+    $spacingDip = $targetPillSpacingPx * $dpp
+
+    foreach ($pair in @($namePair, $descPair)) {
+        $pair.Pill.CornerRadius = [System.Windows.CornerRadius]::new($cornerDip, $cornerDip, $cornerDip, $cornerDip)
+        $pair.Pill.Padding = [System.Windows.Thickness]::new($padH, $padV, $padH, $padV)
+        $pair.Block.FontSize = $fontDip
+    }
+    # Spacing between pills is applied via top-margin on the description pill only.
+    $descPill.Margin = [System.Windows.Thickness]::new(0, $spacingDip, 0, 0)
 })
 
 # ── Cursor tracking timer ────────────────────────────────────
@@ -371,19 +401,82 @@ $pulseDelay.Add_Tick({
 })
 $pulseDelay.Start()
 
-# ── Stdin watcher: detect 'quit' or pipe close for graceful shutdown ──
+# ── Stdin watcher: line-based protocol ─────────────────────────
+# Commands:
+#   desc <utf8-text>\n  — update description pill (empty hides it)
+#   quit\n              — graceful fade-out
+# Pipe close also triggers fade-out (existing behavior).
+
+function Update-DescriptionPill {
+    param([string]$Text)
+    $trimmed = if ($null -eq $Text) { '' } else { $Text }
+    if ([string]::IsNullOrEmpty($trimmed)) {
+        $descPill.Visibility = 'Collapsed'
+        $descBlock.Text = ''
+    } else {
+        $descBlock.Text = $trimmed
+        $descPill.Visibility = 'Visible'
+    }
+}
+
+function Invoke-StdinLine {
+    param([string]$Line)
+    if ($Line -eq 'quit') {
+        Start-FadeOut
+        return
+    }
+    if ($Line -eq 'desc') {
+        Update-DescriptionPill -Text ''
+        return
+    }
+    if ($Line.StartsWith('desc ')) {
+        $text = $Line.Substring(5)
+        Update-DescriptionPill -Text $text
+        return
+    }
+    # Unknown lines are ignored to keep the protocol forward-compatible.
+}
 
 try {
     $stdinStream = [Console]::OpenStandardInput()
-    $stdinBuf = [byte[]]::new(16)
-    $stdinAr = $stdinStream.BeginRead($stdinBuf, 0, $stdinBuf.Length, $null, $null)
+    $script:stdinBuf = [byte[]]::new(4096)
+    $script:stdinAccum = New-Object System.Collections.Generic.List[byte]
+    $script:stdinAr = $stdinStream.BeginRead($script:stdinBuf, 0, $script:stdinBuf.Length, $null, $null)
 
     $stdinWatch = [System.Windows.Threading.DispatcherTimer]::new()
-    $stdinWatch.Interval = [TimeSpan]::FromMilliseconds(100)
+    $stdinWatch.Interval = [TimeSpan]::FromMilliseconds(50)
     $stdinWatch.Add_Tick({
-        if ($stdinAr.IsCompleted) {
+        if (-not $script:stdinAr.IsCompleted) { return }
+
+        $bytesRead = 0
+        try { $bytesRead = $stdinStream.EndRead($script:stdinAr) } catch { $bytesRead = 0 }
+
+        if ($bytesRead -le 0) {
             $stdinWatch.Stop()
-            try { $stdinStream.EndRead($stdinAr) | Out-Null } catch {}
+            Start-FadeOut
+            return
+        }
+
+        for ($i = 0; $i -lt $bytesRead; $i++) {
+            $b = $script:stdinBuf[$i]
+            if ($b -eq 0x0A) {
+                $bytes = $script:stdinAccum.ToArray()
+                $script:stdinAccum.Clear()
+                # Strip trailing CR if present
+                if ($bytes.Length -gt 0 -and $bytes[$bytes.Length - 1] -eq 0x0D) {
+                    $bytes = $bytes[0..($bytes.Length - 2)]
+                }
+                $line = [System.Text.Encoding]::UTF8.GetString($bytes)
+                try { Invoke-StdinLine -Line $line } catch {}
+            } else {
+                $script:stdinAccum.Add($b) | Out-Null
+            }
+        }
+
+        try {
+            $script:stdinAr = $stdinStream.BeginRead($script:stdinBuf, 0, $script:stdinBuf.Length, $null, $null)
+        } catch {
+            $stdinWatch.Stop()
             Start-FadeOut
         }
     })
