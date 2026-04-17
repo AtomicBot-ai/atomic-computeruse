@@ -75,7 +75,8 @@ export async function screenshot(input: ScreenshotInput): Promise<{
   args.push("--json");
 
   const output = execFileSync(binaryPath, args, { encoding: "utf8" });
-  const data = JSON.parse(output.trim()) as {
+  const fixed = output.trim().replace(/\\(?!["\\\/bfnrtu])/g, "\\\\");
+  const data = JSON.parse(fixed) as {
     path: string;
     desktopIndex: number;
     captureX: number;
